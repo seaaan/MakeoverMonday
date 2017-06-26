@@ -57,6 +57,6 @@ d %>%
             labels = c("April", "August", "December")) + 
             theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1))
 
-ggsave("out/2017-week-26.png", width = 5, height = 2.5, units = "in", dpi = 101)
+ggsave("out/2017-week-26.png", width = 5, height = 2.5, units = "in", dpi = 303)
 
 ```
