@@ -1,0 +1,62 @@
+---
+title: '2017 week 26: German car exports'
+output: github_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+library(ggplot2)
+library(stringr)
+library(dplyr)
+```
+
+## Data exploration
+
+```{r}
+d <- readxl::read_excel("data/2017-week-26.xlsx")
+colnames(d) <- c("Type", "ExportOrProduction", "Date", "Number")
+
+ggplot(d, aes(x = Date, y = Number, color = Type)) + 
+    geom_line() + facet_wrap(~ ExportOrProduction)
+
+ggplot(d, aes(x = Date, y = Number, color = ExportOrProduction)) + 
+    geom_line() + facet_wrap(~ Type, scales = "free_y")
+
+ggplot(d, aes(x = Date, y = Number, color = ExportOrProduction)) + 
+    geom_point() + stat_smooth() + facet_wrap(~ Type, scales = "free_y")
+
+ggplot(d, aes(x = Date, y = Number, color = ExportOrProduction)) + 
+    geom_point() + stat_smooth() + facet_wrap(~ Type, scales = "free_y", nrow = 2) + 
+    ggtitle("Global recession affected German truck, but not car, sales")
+
+ggplot(d, aes(x = lubridate::month(Date), y = Number)) + 
+    geom_point(aes(color = factor(lubridate::year(Date)))) + stat_smooth(se = FALSE) + 
+    facet_grid(Type ~ ExportOrProduction, scales = "free_y") + 
+    ggtitle("Seasonal fluctuations in German car production")
+
+d %>% 
+    mutate(Month = lubridate::month(Date), Year = lubridate::year(Date)) %>% 
+    filter(Year < 2017) %>% 
+    group_by(Year, Type, ExportOrProduction) %>% 
+    mutate(Total = sum(Number), Percent = Number / Total * 100, 
+        Diff = Percent - (100 / 12)) %>%
+    ggplot(aes(x = Month, y = Diff)) + geom_col(aes(fill = factor(Year))) +
+    facet_grid(Type ~ ExportOrProduction, scales = "free_y") 
+    
+d %>% 
+    mutate(Month = lubridate::month(Date), Year = lubridate::year(Date)) %>% 
+    filter(Year < 2017) %>% 
+    mutate(ExportOrProduction = 
+            str_replace(ExportOrProduction, "Production", "Domestic")) %>% 
+    ggplot(aes(x = Month, y = Number / 1E3)) + geom_col(aes(fill = factor(Year))) +
+        facet_wrap( ~ Type, scales = "free_y", ncol = 2) + 
+        ggtitle(paste("German carmakers go on vacation in August and\nDecember, ",
+            "but they make up for it in the fall", sep = "")) + 
+        labs(fill = NULL, y = "Thousands of vehicles", x = NULL) + 
+        scale_x_continuous(breaks = c(4, 8, 12), 
+            labels = c("April", "August", "December")) + 
+            theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1))
+
+ggsave("out/2017-week-26.png", width = 5, height = 2.5, units = "in", dpi = 101)
+
+```
