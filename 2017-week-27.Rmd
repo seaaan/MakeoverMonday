@@ -1,0 +1,176 @@
+---
+title: '2017 week 27: German tourism'
+output: github_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+library(ggplot2)
+library(stringr)
+library(dplyr)
+library(ggrepel)
+```
+
+```{r}
+d <- readxl::read_excel("data/2017-week-27.xlsx")
+
+colnames(d)[c(2, 6)] <- c("Destination", "From") 
+
+# a few Nights values are NA, remove them so as not to throw off nights per guest
+d <- d %>% 
+    filter(complete.cases(.))
+
+# summary by guest's home country
+country_of_origin_summary <- d %>% 
+    group_by(From) %>% 
+    summarise(Guests = sum(Guests), Nights = sum(Nights), 
+        NightsPerGuest = Nights / Guests) %>% 
+    arrange(desc(Guests))
+```
+
+## summary by country of origin
+```{r}
+p <- function(d, f = head, ...) {
+    d %>% 
+    f(n = 8) %>% 
+    ggplot(aes_string(...)) + 
+        geom_point() +  
+        gghlab::tilt_x_labels()
+}
+
+p_all <- function(d, ...) {
+    d2 <- d %>% 
+        mutate(Rank = 1:n())
+    
+    ggplot(d2, aes_string(...)) + 
+        geom_point() +  
+        theme(axis.text.x = element_blank(), axis.ticks.x = element_blank()) +
+        geom_label_repel(data = filter(d2, Rank < 4 | Rank > (n() - 3)), 
+            aes_string(...))
+}
+
+country_of_origin_summary %>% 
+    arrange(desc(Guests)) %>% 
+    p(x = "reorder(From, Guests)", y = "log10(Guests)") + ylim(c(5, 9)) + 
+    ggtitle("Countries supplying most guests")
+
+country_of_origin_summary %>% 
+    arrange(NightsPerGuest) %>% 
+    p(x = "reorder(From, NightsPerGuest)", y = "NightsPerGuest") +
+    ggtitle("Countries whose guests stay shortest")
+
+country_of_origin_summary %>% 
+    arrange(desc(NightsPerGuest)) %>% 
+    p(x = "reorder(From, NightsPerGuest)", y = "NightsPerGuest") +
+    ggtitle("Countries whose guests stay longest")
+```
+
+I started out just looking at the top and bottom few. Then I started showing all the data and just labeling the top and bottom few, which is way better.
+
+```{r}
+country_of_origin_summary %>% 
+    p_all(x = "reorder(From, Guests)", y = "log10(Guests)", label = "From") + 
+    ggtitle("Number of guests per country")
+
+country_of_origin_summary %>% 
+    arrange(NightsPerGuest) %>% 
+    p_all(x = "reorder(From, NightsPerGuest)", y = "NightsPerGuest", label = "From") + 
+    ggtitle("Length of stay per country")
+```
+
+## summary by district visiting
+```{r}
+district_visited_summary <- d %>% 
+    group_by(Destination) %>% 
+    summarise(Guests = sum(Guests), Nights = sum(Nights), 
+        NightsPerGuest = Nights / Guests)
+
+district_visited_summary %>% 
+    arrange(desc(Guests)) %>% 
+    p_all(x = "reorder(Destination, Guests)", y = "log10(Guests)", label = "Destination") + 
+    ggtitle("Number of visitors to destination in Germany")
+
+district_visited_summary %>% 
+    arrange(NightsPerGuest) %>% 
+    p_all(x = "reorder(Destination, NightsPerGuest)", y = "NightsPerGuest", 
+        label = "Destination") + 
+    ggtitle("Length of stay in German destinations")
+
+```
+
+## Seasonal variation
+```{r}
+seasons <- d %>% 
+    mutate(Year = factor(Year)) %>% 
+    group_by(Mo, Year) %>% 
+    summarise(Guests = sum(Guests), Nights = sum(Nights), 
+        NightsPerGuest = Nights / Guests) 
+
+ggplot(seasons, aes(x = Mo, y = Guests, color = Year)) + 
+    geom_line() +
+    ggtitle("Peak guests in spring and summer")
+
+ggplot(seasons, aes(x = Mo, y = NightsPerGuest, color = Year)) + 
+    geom_line() + 
+    ggtitle("Peak nights per guest concentrated in summer")
+```
+
+## where do biggest visitors go
+```{r}
+longest <- c("Arabische Golfstaaten", "Israel", "Sonstige afrikanische Länder")
+
+d %>% 
+    filter(From %in% longest) %>% 
+    group_by(From, Destination) %>% 
+    summarise(NightsPerGuest = sum(Nights) / sum(Guests)) %>% 
+    group_by(From) %>% 
+    arrange(NightsPerGuest, .by_group = TRUE) %>% 
+    mutate(rankx = 1:n()) %>% 
+    p_all(x = "rankx", y = "NightsPerGuest", 
+        label = "Destination") + 
+        facet_wrap(~From, ncol = 2)
+
+
+
+d %>% filter(From %in% "Arabische Golfstaaten") %>% 
+    mutate(Year = factor(Year)) %>% 
+    group_by(Destination, Year) %>% 
+    summarise(g = sum(Guests), n = sum(Nights), npg = n/g) %>% 
+    ggplot(aes(x = reorder(Destination, npg, mean), y = npg, color = Year)) + 
+    geom_point()
+
+
+d %>% filter(From %in% "Arabische Golfstaaten", 
+    Destination %in% c("Märkisch-Oderland", "Ostprignitz-Ruppin", "Prignitz")) %>% 
+    mutate(Year = factor(Year)) %>% 
+    group_by(Destination, Year) %>% 
+    summarise(g = sum(Guests), n = sum(Nights), npg = n/g) %>% 
+    ggplot(aes(x = g, y = npg, color = Year)) + 
+    geom_point() + facet_wrap(~Destination)
+
+
+```
+
+## where and when to go for most/fewest other tourists? 
+```{r}
+alone <- d %>% 
+    mutate(Season = case_when(
+        Mo > 2 & Mo < 6 ~ "Spring", 
+        Mo > 5 & Mo < 9 ~ "Summer", 
+        Mo > 8 & Mo < 12 ~ "Fall", 
+        TRUE ~ "Winter")) %>% 
+    group_by(Destination, Season) %>% 
+    summarise(Guests = sum(Guests), NightsPerGuest = sum(Nights) / sum(Guests)) %>% 
+    mutate(lab = ifelse((Guests < 1.45E5 & Season == "Winter"), Destination, ""), 
+        lab = ifelse(lab == "" & Guests > 3E6 & Season == "Summer", Destination, lab))
+
+ggplot(alone, aes(x = reorder(Destination, Guests, mean), y = Guests / 1E6)) + 
+    geom_point(aes(color = Season)) + scale_y_log10() + 
+    geom_label_repel(aes(label = lab), max.iter = 10E3, 
+        point.padding = unit(0.1, "lines"), size = 3.5) + 
+    theme(axis.text.x = element_blank(), axis.ticks.x = element_blank()) + 
+    ggtitle("German destinations for introverts and extroverts") +
+    labs(color = NULL, y = "Millions of visitors", x = "Destination")
+
+ggsave("out/2017-week-27.png", width = 5, height = 2.5, units = "in", dpi = 303)
+```
