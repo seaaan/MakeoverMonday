@@ -98,15 +98,24 @@ combined %>%
     ggplot(aes(x = Year, y = Record, color = Country)) + 
     geom_line()
 
-combined %>%    
+to_plot <- combined %>%    
     group_by(Country) %>% 
     arrange(Year) %>% 
     mutate(Wins = cumsum(Result == "Win")) %>% 
-    ggplot(aes(x = Year, y = Wins, color = Country)) + 
+    ungroup() %>% 
+    mutate(Country = factor(Country, levels = 
+            c("France", "Other", "Belgium", "Spain", "Italy")))
+
+labels <- filter(to_plot, Year == max(Year)) %>% 
+    mutate(Year = Year + 1)
+
+ggplot(to_plot, aes(x = Year, y = Wins, color = Country)) + 
     geom_line() + 
     ggtitle("Increased diversity of Tour de France winners over time") + 
     labs(subtitle = "Early dominance of France and Belgium has waned since the 80s.", x = NULL, y = "Number of wins") + 
-    scale_color_brewer(type = "qual", palette = "Set1")
+    scale_color_brewer(type = "qual", palette = "Set1", guide = FALSE) + 
+    geom_text(data = labels, aes(label = Country), hjust = 0) + 
+    xlim(c(1900, 2025))
 
-ggsave("out/2017-week-28.png", width = 5, height = 2.5, units = "in", dpi = 303)
+ggsave("out/2017-week-28.png", width = 6, height = 4, units = "in", dpi = 303)
 ```
