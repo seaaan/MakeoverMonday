@@ -1,0 +1,112 @@
+---
+title: '2017 week 28: Tour de France'
+output: github_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+library(ggplot2)
+library(stringr)
+library(dplyr)
+library(ggrepel)
+```
+
+```{r}
+d <- readxl::read_excel("data/2017-week-28.xlsx")
+colnames(d) <- colnames(d) %>% str_replace("'", "") %>%
+    str_replace("\\(.*", "") %>% snakecase::to_big_camel_case()
+
+```
+
+# Change over time
+```{r}
+time_plot <- function(...) {
+    ggplot(d, aes_string(x = "Year", ...)) + 
+        geom_line() + 
+        geom_point(aes(color = Winner == "Results voided")) + 
+        labs(color = "Void?")
+}
+
+time_plot(y = "WinnersAvgSpeed") + ylim(c(0, 45))
+time_plot(y = "NumberOfStages") + ylim(c(0, 26))
+time_plot(y = "Finishers") + ylim(c(0, 210))
+time_plot(y = "Entrants") + ylim(c(0, 210))
+```
+
+# Country and team summaries
+```{r}
+ggplot(d, aes(x = WinnersTeam)) + geom_bar() + gghlab::tilt_x_labels()
+ggplot(d, aes(x = WinnersNationality)) + geom_bar() + 
+    gghlab::tilt_x_labels()
+
+d %>% 
+    group_by(WinnersNationality) %>% 
+    arrange(Year) %>% 
+    mutate(Record = 1:n() / (Year - 1902)) %>% 
+    ggplot(aes(x = Year, y = Record, color = WinnersNationality)) + 
+    geom_line()
+
+d %>% 
+    group_by(WinnersNationality) %>% 
+    arrange(Year) %>% 
+    filter(n() > 1) %>% 
+    mutate(Record = 1:n() / (Year - 1902)) %>% 
+    ggplot(aes(x = Year, y = Record, color = WinnersNationality)) + 
+    geom_line() + ggtitle("Countries with > 1 winner")
+
+d %>% 
+    group_by(WinnersNationality) %>% 
+    arrange(Year) %>% 
+    filter(n() > 2) %>% 
+    mutate(Record = 1:n() / (Year - 1902)) %>% 
+    ggplot(aes(x = Year, y = Record, color = WinnersNationality)) + 
+    geom_line() + ggtitle("Countries with > 2 winners")
+
+d %>% 
+    group_by(WinnersNationality) %>% 
+    summarise(LastWin = max(Year), Number = n()) %>% 
+    ggplot(aes(x = LastWin, y = Number, color = WinnersNationality)) + 
+    geom_point()
+
+d %>% 
+    group_by(WinnersNationality) %>% 
+    summarise(LastWin = max(Year), Number = n()) %>% 
+    arrange(desc(Number))
+```
+
+```{r}
+best <- c("France", "Belgium", "Spain", "Italy")
+
+working <- d %>% 
+    mutate(WinnersNationality = str_trim(WinnersNationality)) %>%  
+    filter(WinnersNationality != "Results voided") %>% 
+    mutate(Country = ifelse(WinnersNationality %in% best,
+        WinnersNationality, "Other"), Result = "Win") %>% 
+    select(Country, Year, Result)
+
+full <- data_frame(
+    Year = rep(seq(min(d$Year), max(d$Year)), 5), 
+    Country = rep(unique(working$Country), each = 114))
+
+combined <- left_join(full, working, fill = NA) %>% 
+    mutate(Result = ifelse(is.na(Result), "Loss", Result))
+
+combined %>%    
+    group_by(Country) %>% 
+    arrange(Year) %>% 
+    mutate(Record = cumsum(Result == "Win") / (Year - 1902)) %>% 
+    ggplot(aes(x = Year, y = Record, color = Country)) + 
+    geom_line()
+
+combined %>%    
+    group_by(Country) %>% 
+    arrange(Year) %>% 
+    mutate(Wins = cumsum(Result == "Win")) %>% 
+    ggplot(aes(x = Year, y = Wins, color = Country)) + 
+    geom_line() + 
+    ggtitle("Increased diversity of Tour de France winners over time") + 
+    labs(subtitle = "Early dominance of France and Belgium has waned since the 80s.", x = NULL, y = "Number of wins") + 
+    scale_color_brewer(type = "qual", palette = "Set1")
+
+ggsave("out/2017-week-28.png", width = 5, height = 2.5, units = "in", dpi = 303)
+```
