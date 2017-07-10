@@ -119,3 +119,34 @@ ggplot(to_plot, aes(x = Year, y = Wins, color = Country)) +
 
 ggsave("out/2017-week-28.png", width = 6, height = 4, units = "in", dpi = 303)
 ```
+
+I like that graph a lot. I also tried drawing steps instead of lines, because wins are discrete events. This has its merits but I think the zig-zag pattern is distracting. 
+
+```{r}
+ggplot(to_plot, aes(x = Year, y = Wins, color = Country)) + 
+    geom_step() + 
+    ggtitle("Increased diversity of Tour de France winners over time") + 
+    labs(subtitle = "Early dominance of France and Belgium has waned since the 80s.", x = NULL, y = "Number of wins") + 
+    scale_color_brewer(type = "qual", palette = "Set1", guide = FALSE) + 
+    geom_text(data = labels, aes(label = Country), hjust = 0) + 
+    xlim(c(1900, 2025))
+```
+
+Then I wondered if representing the wins with points would more effectively show the changing win patterns. 
+
+```{r}
+filter(to_plot, Result == "Win") %>% 
+    mutate(Country = factor(Country, levels = 
+        rev(c("France", "Belgium", "Italy", "Spain", "Other")))) %>% 
+    ggplot(aes(x = Year, y = Country)) + 
+        geom_point(pch = "|", size = 4) + 
+        scale_color_discrete(guide = FALSE) + 
+        ggtitle("Increased diversity of Tour de France winners over time") + 
+    labs(x = NULL, y = NULL, subtitle = 
+            "Early dominance of France and Belgium has waned since the 80s.")
+
+ggsave("out/2017-week-28-2.png", width = 5.25, height = 2.5, units = "in", dpi = 303)
+
+```
+
+I think this is a pretty effective way of showing it too. 
