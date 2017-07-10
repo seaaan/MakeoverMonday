@@ -11,6 +11,8 @@ library(stringr)
 library(dplyr)
 ```
 
+It's week 24 of [Makeover Monday](http://www.makeovermonday.co.uk/data/) 2016 edition. The data this week is about gender disparities in the workplace and comes from [McKinsey](http://www.mckinsey.com/business-functions/organization/our-insights/women-in-the-workplace).
+
 ## Data exploration
 
 ```{r}

@@ -11,6 +11,8 @@ library(dplyr)
 library(ggrepel)
 ```
 
+It's week 28 of [Makeover Monday](http://www.makeovermonday.co.uk/data/) 2017 edition. The data this week is about the Tour de France and comes from [Knoema](https://knoema.com/dvkiqwd/tour-de-france-statistics) and [wikipedia](https://en.wikipedia.org/wiki/Tour_de_France).
+
 ```{r}
 d <- readxl::read_excel("data/2017-week-28.xlsx")
 colnames(d) <- colnames(d) %>% str_replace("'", "") %>%

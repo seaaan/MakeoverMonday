@@ -10,6 +10,9 @@ library(stringr)
 library(dplyr)
 ```
 
+It's week 26 of [Makeover Monday](http://www.makeovermonday.co.uk/data/) 2017 edition. The data this week is about car production in Germany and comes from
+[VDA](https://www.vda.de/en/services/facts-and-figures.html).
+
 ## Data exploration
 
 ```{r}

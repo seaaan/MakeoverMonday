@@ -10,7 +10,7 @@ library(stringr)
 library(dplyr)
 library(ggrepel)
 ```
-
+It's week 27 of [Makeover Monday](http://www.makeovermonday.co.uk/data/) 2017 edition. The data this week is about tourism in Germany and comes from [statistik Berlin Brandenburg](https://www.statistik-berlin-brandenburg.de/grundlagen/tourismus-grafik.asp?Ptyp=260&Sageb=45000&creg=BBB&anzwer=5). 
 ```{r}
 d <- readxl::read_excel("data/2017-week-27.xlsx")
 
