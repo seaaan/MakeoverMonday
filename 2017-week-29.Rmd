@@ -1,0 +1,235 @@
+---
+title: '2017 week 29: White House salaries'
+output: github_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+library(ggplot2)
+library(stringr)
+library(dplyr)
+library(ggrepel)
+```
+
+It's week 29 of [Makeover Monday](http://www.makeovermonday.co.uk/data/) 2017 edition. This week the data is a comparison of White House employee salaries between the Obama and Trump administrations. The data comes from [NPR](https://docs.google.com/spreadsheets/d/119OjfVU9Uf0lqfwu8VCjKsD73dMb5owmai5Nec1OFBI/edit#gid=0), which wrote about the topic [here](http://www.npr.org/2017/06/30/535069910/trump-white-house-staff-payroll-nearly-36-million-and-top-heavy). 
+
+I struggled a lot with this one. 
+
+```{r}
+d <- bind_rows(
+    readxl::read_excel("data/2017-week-29-a.xlsx", sheet = "Trump Admin"), 
+    readxl::read_excel("data/2017-week-29-a.xlsx", sheet = "Obama admin"))
+```
+
+## Initial data exploration
+
+Obama had more employees. Trump has fewer, who make, on average, more than the Obama employees, presumably because he has filled mainly higher level positions.
+```{r}
+d %>% 
+    group_by(ADMINISTRATION) %>% 
+    summarise(n = n(), mean = mean(SALARY), median = median(SALARY))
+```
+
+There are a ton of unique position titles. Can we put them in groups?
+
+```{r}
+
+pos <- function(pattern) {
+    str_detect(d$`POSITION TITLE`, pattern)
+}
+
+d$Bin <- case_when(pos("^ADVISOR") ~ "Advisor", 
+    pos("^ASSISTANT DIRECTOR") ~ "Assistant director",
+    pos("^ASSISTANT TO THE PRESIDENT") ~ "Assistant to the President",
+    pos("^ASSOCIATE COUNSEL") ~ "Associate counsel",
+    pos("^ASSOCIATE DIRECTOR") ~ "Associate director",
+    pos("^DEPUTY ASSISTANT") ~ "Deputy assistant",
+    pos("^DEPUTY DIRECTOR") ~ "Deputy director",
+    pos("^DIRECTOR") ~ "Director",
+    pos("^EXECUTIVE ASSISTANT") ~ "Executive assistant", 
+    pos("^INFORMATION SERVICES OPERATOR") ~ "Information services", 
+    pos("^STAFF ASSISTANT") ~ "Staff assistant",
+    pos("^SPECIAL ASSISTANT") ~ "Special assistant", 
+    pos("^RECORDS MANAGEMENT") ~ "Records management",
+    pos("^SENIOR POLICY") ~ "Senior policy advisor",
+    TRUE ~ "Other")
+
+d$Level <- case_when(pos("^ASSISTANT") ~ "Assistant",
+    pos("^ASSOCIATE") ~ "Associate",
+    pos("^CHIEF") ~ "Chief",
+    pos("^DEPUTY") ~ "Deputy",
+    pos("^DIRECTOR") ~ "Director",
+    pos("^ASSISTANT") ~ "Assistant",
+    pos("^SENIOR") ~ "Senior",
+    pos("ADVISOR") ~ "Advisor",
+    pos("^SPECIAL ASSISTANT") ~ "Special assistant",
+    pos("^STAFF ASSISTANT") ~ "Staff assistant",
+    TRUE ~ "Other")
+        
+ggplot(d, aes(x = Level, y = SALARY, color = ADMINISTRATION)) + 
+    geom_boxplot() + 
+    geom_point(position = position_dodge(width = 1)) + 
+    gghlab::tilt_x_labels()
+
+ggplot(d, aes(x = Level, fill = ADMINISTRATION)) + 
+    geom_bar(stat = "count", position = "dodge") + 
+    gghlab::tilt_x_labels()
+```
+
+## Gender
+
+I decided to compare the genders of WH staffers and see if they got paid differently. To do this, I matched the first names of the staffers to a US database. If more than 75% of the people in the database with that name were one gender, I assigned that person that gender. If the name wasn't in the database or it was a more mixed-gender name (<75%), I looked the person up manually. This analysis unfortunately cannot account for transgender individuals as a separate category, so they get categorized according to the gender of their name.  
+
+```{r}
+d <- d %>% 
+    mutate(FirstName = str_replace(NAME, "^.*, ", ""), 
+        FirstName = str_replace_all(FirstName, " .*", ""))
+
+library(gender)
+genders <- gender(unique(d$FirstName), years = 1970)
+
+# accept gender if proportion > 0.75
+genders <- mutate(genders, gender = 
+        ifelse(proportion_male < 0.75 & proportion_female < 0.75,
+            "Indeterminate", gender), 
+    FirstName = name)
+
+# what names are indeterminate? 
+# left_join(d, genders) %>% 
+#     filter(is.na(gender) | gender == "Indeterminate") %>% 
+#     select(NAME) %>% 
+#     write.csv(file = "data/2017-week-29-names.csv", row.names = FALSE)
+
+d <- left_join(d, genders)
+
+manual_genders <- read.csv("data/2017-week-29-names.csv", 
+    stringsAsFactors = FALSE) %>% 
+    transmute(NAME = NAME, new_gender = gender)
+
+to_plot <- left_join(d, manual_genders) %>% 
+    mutate(gender = ifelse(new_gender %in% c("female", "male"), 
+        new_gender, gender)) %>% 
+    mutate(gender = ifelse(NAME == "Miraaj-Raza, Sidrah", "female", gender))
+
+to_plot %>% filter(SALARY > 0) %>% 
+    ggplot(aes(x = gender, y = SALARY)) + geom_boxplot() + geom_point() +
+    facet_wrap(~ADMINISTRATION)
+```
+
+Overall, average salaries seem higher for men than women, especially in the Trump WH. Why?
+
+```{r}
+to_plot %>% filter(SALARY > 0) %>% 
+    ggplot(aes(x = gender, y = SALARY)) + geom_boxplot() + geom_point() +
+    facet_grid(ADMINISTRATION~Level)
+
+to_plot %>% filter(SALARY > 0) %>% 
+    ggplot(aes(x = gender, y = SALARY)) + geom_violin(draw_quantiles = 0.5) +
+    geom_point() + 
+    facet_grid(ADMINISTRATION~Level)
+
+to_plot %>% filter(SALARY > 0) %>% 
+    ggplot(aes(x = gender, y = SALARY)) + 
+    ggbeeswarm::geom_quasirandom(method = "smiley", aes(color = gender)) +
+    stat_summary(geom = "point", fun.y = mean) + 
+    facet_grid(ADMINISTRATION~Level)
+
+to_plot %>% filter(SALARY > 0, Level != "Chief") %>% 
+    ggplot(aes(x = Level, y = SALARY, color = gender)) + 
+    stat_summary(geom = "pointrange", fun.y = median, 
+        fun.ymin = function(x) unname(quantile(x, 0)), 
+        fun.ymax = function(x) unname(quantile(x, 1)), 
+        position = position_dodge(width = 0.5)) + 
+    facet_wrap(~ADMINISTRATION, ncol = 1)
+
+to_plot %>% 
+    mutate(title = str_sub(`POSITION TITLE`, 1, 20)) %>% 
+    group_by(title, ADMINISTRATION, gender) %>%
+    summarise(Salary = median(SALARY)) %>% 
+    tidyr::spread(gender, Salary) %>% 
+    filter(!is.na(male), !is.na(female)) %>% 
+    group_by(title) %>% 
+    filter(n() > 1) %>% 
+    ggplot(aes(x = male, y = female)) + 
+    geom_point() + facet_wrap(~ADMINISTRATION) + 
+    geom_abline(slope = 1, intercept = c(0, 0))
+
+to_plot %>% 
+    mutate(title = str_sub(`POSITION TITLE`, 1, 20)) %>% 
+    group_by(title, ADMINISTRATION, gender) %>%
+    summarise(Salary = median(SALARY)) %>% 
+    group_by(title) %>% 
+    filter(n() > 3) %>% 
+    arrange(desc(Salary)) %>% 
+    ungroup() %>% 
+    mutate(title = factor(title, levels = unique(title))) %>% 
+    ggplot(aes(x = title, y = Salary, fill = gender)) + 
+    geom_col(position = "dodge") + facet_wrap(~ADMINISTRATION) + 
+    ggtitle("Median salary within a job level is\nsimilar across genders and admins")
+
+ggplot(to_plot, aes(x = gender)) + 
+    geom_bar(stat = "count") + facet_wrap(~ADMINISTRATION) + 
+    ggtitle("Number of employees")
+
+ggplot(to_plot, aes(x = SALARY, fill = gender)) + 
+    geom_density(alpha = 0.5) + 
+    facet_wrap(~ADMINISTRATION) + 
+    ggtitle("Trump admin employs more men at higher-salary positions")
+
+ggplot(to_plot, aes(x = SALARY, fill = gender)) + 
+    geom_histogram(bins = 25) + 
+    facet_grid(gender~ADMINISTRATION)
+
+ggplot(to_plot, aes(x = SALARY, color = gender)) + 
+    geom_freqpoly(bins = 10) + 
+    facet_wrap(~ADMINISTRATION)
+
+ggplot(to_plot, aes(x = SALARY, color = gender)) + 
+    stat_ecdf(geom = "step") + facet_wrap(~ADMINISTRATION, ncol = 1) 
+```
+
+It looks to me like the difference in average salaries between men and women in the Trump admin are due to more men being employed in higher-wage positions, rather than men getting paid more than women who are in their same job category. 
+
+```{r}
+binned <- to_plot %>% 
+    filter(SALARY > 0) %>%
+    mutate(salary_bin = case_when(
+        SALARY < 55000 ~ "<55K", 
+        SALARY < 85000 ~ "55-85K",
+        SALARY < 115000 ~ "85-115K", 
+        SALARY < 145000 ~ "115-145K", 
+        TRUE ~ ">145K"), 
+        salary_bin = factor(salary_bin, levels = 
+                c("<55K", "55-85K", "85-115K", "115-145K", ">145K")))
+
+ggplot(binned, aes(x = salary_bin, fill = gender)) + 
+    geom_bar(stat = "count", position = "dodge") + 
+    facet_wrap(~ ADMINISTRATION, ncol = 1, scales = "free_y") + 
+    gghlab::tilt_x_labels() + 
+    scale_fill_manual(values = c("grey25", "grey50")) 
+
+scaled_binned <- binned %>% 
+    group_by(ADMINISTRATION, salary_bin, gender) %>%
+    count() %>% 
+    group_by(ADMINISTRATION, salary_bin) %>% 
+    arrange(gender, .by_group = TRUE) %>% 
+    summarise(MenPerWoman = n[2] / n[1])
+    
+ggplot(scaled_binned, aes(x = salary_bin, y = MenPerWoman, fill = ADMINISTRATION)) + 
+    geom_col(position = "dodge") +  
+    geom_hline(yintercept = 1) + 
+    scale_fill_manual(values = c("#377eb8", "#e41a1c"), guide = FALSE) +
+    ggtitle("Pay (dis)parity by gender in the White House") + 
+    labs(y = "# of men employed per woman", 
+        x = NULL, fill = NULL,
+        subtitle = 
+            paste0("More women work in low-wage positions. Higher-wage positions",
+                "\nare dominated by men in the Trump White house.")) + 
+    annotate("text", x = 0.4, y = c(2.85, 2.65), label = c("Obama", "Trump"), 
+        color = c("#377eb8", "#e41a1c"), hjust = 0)
+
+ggsave("out/2017-week-29.png", width = 5, height = 3.5, 
+    units = "in", dpi = 303)        
+```
+
+Indeed, many more men than women in the higher wage positions than in the lower wage buckets. 
