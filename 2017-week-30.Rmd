@@ -1,0 +1,114 @@
+---
+title: '2017 week 30: Water footprints'
+output: github_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+library(ggplot2)
+library(stringr)
+library(dplyr)
+library(ggrepel)
+```
+
+It's week 30 of [Makeover Monday](http://www.makeovermonday.co.uk/data/) 2017 edition. The data comes from [UNESCO](http://waterfootprint.org/media/downloads/Report-48-WaterFootprint-AnimalProducts-Vol1.pdf), and was covered [here](https://www.statista.com/chart/9483/how-thirsty-is-our-food/). 
+
+```{r}
+d <- readxl::read_excel("data/2017-week-30.xlsx")
+d <- d[ , 1:8]
+colnames(d) <- str_replace_all(colnames(d), " .*", "")
+
+d <- d %>%
+    tidyr::gather(Water, MeterPerTon, Blue, Green, Grey, Total) %>% 
+    tidyr::gather(Nutrient, Amount, Fat, Protein, Calorie)
+```
+
+## Initial data exploration
+
+```{r}
+ggplot(d, aes(x = Water, y = MeterPerTon, fill = Food)) + 
+    geom_col()
+
+ggplot(d, aes(x = Water, y = MeterPerTon, fill = Food)) + 
+    geom_col(position = "fill")
+```
+
+Most of the water used is green. There are too many groups to tell much about the groups. 
+
+```{r}
+food_categories <- data.frame(Food = c("Sugar crops", "Vegetables", 
+    "Starchy roots", "Fruits", "Cereals", "Oil crops", "Pulses", 
+    "Nuts", "Milk", "Eggs", "Chicken meat", "Butter", "Pig meat", 
+    "Sheep/goat meat", "Bovine meat"), 
+    Category = c("Crop", "Fruit/Veg", "Grain", "Fruit/Veg", "Grain", "Crop", 
+        "Grain", "Nuts", "Dairy", "Dairy", "Meat", "Dairy", rep("Meat", 3)))
+d <- inner_join(d, food_categories)
+
+d %>% 
+    group_by(Category, Water) %>% 
+    summarise(MeterPerTon = mean(MeterPerTon)) %>% 
+    ggplot(aes(x = Water, y = MeterPerTon, fill = Category)) + 
+        geom_col(position = "fill") + 
+        scale_fill_brewer(palette = "Set1")
+```
+
+Total water consumption from highest to smallest (per ton of product produced): meat, nut, dairy, grain, crop, and then fruit/veg. (average of all foods in the category)
+
+```{r}
+d %>% 
+    filter(Amount > 0) %>% 
+    group_by(Category, Water, Nutrient) %>% 
+    summarise(MeterPerTon = mean(MeterPerTon), Amount = mean(Amount)) %>% 
+    ggplot(aes(x = Water, y = MeterPerTon / Amount, fill = Category)) + 
+    geom_col(position = "fill") + 
+    scale_fill_brewer(palette = "Set1") + 
+    facet_wrap(~ Nutrient)
+```
+
+Total water consumption per unit calorie/fat/protein is harder to interpret. Some foods 0 units of particular nutrients (e.g. butter has 0 g protein), so those foods are removed from this plot. 
+
+Maybe a better way to think about it is: how many units of nutrient can I get per cubic meter of water? 
+
+```{r}
+d %>% 
+    ggplot(aes(x = Water, y = Amount / MeterPerTon, color = Food)) + 
+    geom_point() + facet_grid(Nutrient ~ Category, scales = "free_y")
+```
+
+Too much noise with some foods having very little use of one particular kind of water. 
+
+```{r}
+d %>% 
+    filter(Water == "Total") %>% 
+    ggplot(aes(x = Category, y = Amount / MeterPerTon, color = Food)) + 
+    geom_point() + facet_wrap(~ Nutrient, scales = "free_y", ncol = 1)
+```
+
+Colors overwhelming but this is okay otherwise. Incidentally, I realized that the last three columns of the data are liter of water per unit nutrient (g fat/g protein/kcal), which is the inverse of the number I just came up with. I could have just used those columns, except that for cases where there is 0 of that unit, the numbers are off. 
+
+```{r}
+
+to_plot <- d %>% 
+    mutate(UnitPerLiter = Amount / MeterPerTon) %>%
+    mutate(Nutrient = case_when(
+        Nutrient == "Fat" ~ "grams fat / liter water", 
+        Nutrient == "Protein" ~ "grams protein / liter water",
+        TRUE ~ "calories / liter water"
+    )) %>% 
+    filter(Water == "Total") %>% 
+    group_by(Nutrient) %>%
+    mutate(Highlight = UnitPerLiter > max(UnitPerLiter) * 0.75) %>% 
+    mutate(Highlight = ifelse(Highlight, Food, NA))
+
+ggplot(to_plot, aes(x = Category, y = UnitPerLiter)) + 
+    geom_point(pch = 1) + 
+    facet_wrap(~ Nutrient, scales = "free_y", ncol = 1) + 
+    labs(y = NULL, x = NULL) + 
+    ggrepel::geom_label_repel(aes(label = Highlight), 
+        min.segment.length = unit(0.25, "lines"), max.iter = 10000) + 
+    ggtitle("How many nutrients can a liter of water produce?") + 
+    labs(subtitle = paste0("A liter of water produces the most calories and protein",
+        " when converted\ninto grain. For fat, butter is the most efficient."))
+
+ggsave("out/2017-week-30.png", width = 5, height = 5, units = "in", dpi = 303)
+```
