@@ -1,0 +1,116 @@
+---
+title: '2017 week 31: Southeast Asian Games'
+output: github_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+library(ggplot2)
+library(stringr)
+library(dplyr)
+```
+
+It's week 31 of [Makeover Monday](http://www.makeovermonday.co.uk/data/) 2017. The data comes from [Sport Singapore](https://www.myactivesg.com/sea-games-asean-para-games/28th-sea-games-singapore-2015). 
+
+```{r}
+d <- readxl::read_excel("data/2017-week-31.xlsx", guess_max = 1E5)
+
+# remove unused columns
+d <- d %>% 
+    select(-starts_with("Comp"), -Phase, -contains("Continent"))
+```
+
+Statistics about the games: 
+
+```{r}
+d %>% 
+    group_by(Year) %>%
+    summarise(Host = `Host Country`[1],
+        NAgeBrackets = length(unique(Class)), 
+        NSports = length(unique(Sport)), 
+        NEventTypes = length(unique(Discipline)), 
+        NNationalities = length(unique(Nationality)), 
+        NCountries = length(unique(Country)),
+        NAthletes = length(unique(Person)))
+```
+
+Performances in the top n in the world: 
+```{r}
+d %>% 
+    group_by(Year) %>%
+    summarise(Host = `Host Country`[1],
+        Top10 = sum(`World Ranking` <= 10, na.rm = TRUE), 
+        Top50 = sum(`World Ranking` <= 50, na.rm = TRUE), 
+        Top100 = sum(`World Ranking` <= 100, na.rm = TRUE), 
+        TotalRank = sum(!is.na(`World Ranking`)))
+```
+
+Countries of participants: 
+```{r}
+d %>% 
+    group_by(Year, Country) %>% 
+    summarise(n = n()) %>% 
+    ggplot(aes(x = Year, y = n, color = Country)) + 
+    geom_line() + 
+    gghlab::tilt_x_labels() + 
+    scale_color_brewer(palette = "Set3")
+
+ggplot(d, aes(y = as.numeric(Rank), x = Country)) + 
+    geom_boxplot() + 
+    facet_wrap(~ Year) + 
+    gghlab::tilt_x_labels()
+
+ggplot(d, aes(y = as.numeric(Rank) / Participants, x = Country)) + 
+    geom_boxplot() + 
+    facet_wrap(~ Year) + 
+    gghlab::tilt_x_labels() + 
+    ylab("Rank / Participants in event")
+
+
+d %>% 
+    group_by(Year, Country) %>% 
+    summarise(Host = `Host Country`[1],
+        Gold = sum(Medal == "G", na.rm = TRUE), 
+        Silver = sum(Medal == "S", na.rm = TRUE),
+        Bronze = sum(Medal == "B", na.rm = TRUE),
+        Attempts = n()) %>% 
+    tidyr::gather(Medal, Number, Gold, Silver, Bronze) %>% 
+    ggplot(aes(y = Number / Attempts, x = Country, fill = Medal)) + 
+        geom_col(position = "dodge") + 
+        facet_wrap(~paste(Year, Host), ncol = 2) + 
+        gghlab::tilt_x_labels()
+
+```
+
+No country seems to dramatically dominate. It sort of looks like host countries do better, is that true?
+
+```{r}
+to_plot <- d %>% 
+    group_by(Year, Country) %>% 
+    summarise(Host = `Host Country`[1],
+        Gold = sum(Medal == "G", na.rm = TRUE), 
+        Silver = sum(Medal == "S", na.rm = TRUE),
+        Bronze = sum(Medal == "B", na.rm = TRUE),
+        Attempts = n()) %>% 
+    tidyr::gather(Medal, Number, Gold, Silver, Bronze) %>%
+    filter(Country %in% .$Host, Medal == "Gold") %>% 
+    mutate(Country = factor(Country, 
+        levels = c("Thailand", "Laos", "Indonesia", "Myanmar", "Singapore"))) %>% 
+    mutate(Hoster = ifelse(Host == Country, "Host", "Guest"))
+    
+st <- paste0("Thai, Indonesian, and Lao athletes did better than usual",
+            " at home, but\nMyanmarese and Singaporean competitors did not.")
+
+ggplot(to_plot, aes(y = Number / Attempts * 10, 
+        x = as.character(Year), fill = Hoster)) + 
+    geom_col(position = "dodge") + 
+    facet_wrap(~Country, ncol = 3) + 
+    gghlab::tilt_x_labels(90) + 
+    scale_fill_manual(values = c("grey50", "black")) + 
+    ggtitle("Home field advantage in the Southeast Asian games") + 
+    labs(fill = NULL, y = "Gold medals per 10 attempts", x = NULL, 
+        subtitle = st) + 
+    theme(legend.position = c(0.85, 0.2))
+
+ggsave("out/2017-week-31.png", width = 5.25, height = 3.5, units = "in", dpi = 303)
+```
