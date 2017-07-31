@@ -114,3 +114,35 @@ ggplot(to_plot, aes(y = Number / Attempts * 10,
 
 ggsave("out/2017-week-31.png", width = 5.25, height = 3.5, units = "in", dpi = 303)
 ```
+
+```{r}
+to_plot <- d %>% 
+    group_by(Year, Country) %>% 
+    summarise(Host = `Host Country`[1],
+        Gold = sum(Medal == "G", na.rm = TRUE), 
+        Silver = sum(Medal == "S", na.rm = TRUE),
+        Bronze = sum(Medal == "B", na.rm = TRUE),
+        Attempts = n()) %>% 
+    tidyr::gather(Medal, Number, Gold, Silver, Bronze) %>%
+    filter(Country %in% .$Host) %>%
+    mutate(Country = factor(Country, 
+        levels = c("Thailand", "Laos", "Indonesia", "Myanmar", "Singapore"))) %>% 
+    mutate(Hoster = ifelse(Host == Country, "Host", "Guest")) %>% 
+    mutate(Medal = factor(Medal, levels = c("Gold", "Silver", "Bronze")))
+    
+st <- paste0("Thai, Indonesian, and Lao athletes won more golds than usual at home, but",
+            "\nMyanmarese and Singaporean competitors did not. Silver and bronze medals", 
+            "\nwere not won at higher rates at home.")
+
+ggplot(to_plot, aes(y = Number / Attempts * 10,
+        x = Country, shape = Hoster)) +
+    geom_point() +
+    scale_shape_manual(values = c(1, 16)) +
+    gghlab::tilt_x_labels(90) + facet_wrap(~Medal) + 
+        ggtitle("Home field advantage in the Southeast Asian games") + 
+    labs(shape = NULL, y = "Medals per 10 attempts", x = NULL, 
+        subtitle = st)
+
+ggsave("out/2017-week-31-2.png", width = 5.25, height = 3.5, units = "in", dpi = 303)
+
+```
