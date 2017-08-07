@@ -1,0 +1,96 @@
+---
+title: '2017 week 32: Toilets in India'
+output: github_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+library(ggplot2)
+library(stringr)
+library(dplyr)
+```
+
+It's week 31 of [Makeover Monday](http://www.makeovermonday.co.uk/data/) 2017. The data is about access to sanitation in India and comes from the [Annual Status of Education Report](http://www.asercentre.org/p/289.html). 
+
+```{r}
+d <- readxl::read_excel("data/2017-week-32.xlsx", guess_max = 1E5)
+
+ggplot(d, aes(x = Year, y = `% Usable Toilets`)) + 
+    geom_point() + geom_line(aes(group = State)) + 
+    facet_grid(Category~Status)
+
+d %>% 
+    group_by(State, Year) %>% 
+    arrange(Category) %>% 
+    summarise(AllMinusGirls = `% Usable Toilets`[1] - `% Usable Toilets`[2]) %>% 
+    ggplot(aes(x = Year, y = AllMinusGirls)) + 
+    geom_point() + geom_line(aes(group = State)) + geom_boxplot(aes(group = Year))
+```
+
+In general there has been improvement in the percent of toilets that are working since 2010. In addition, the difference between all usable toilets and usable toilets for women has generally declined since then, meaning that the states are approaching parity between usable toilets for men and women. 
+
+```{r}
+d %>% 
+    filter(Year != 2014, !is.na(`% Usable Toilets`)) %>% 
+    group_by(State, Category) %>% 
+    filter(n() > 1) %>% 
+    ggplot(aes(x = Year, y = `% Usable Toilets`)) + 
+    geom_point() + geom_line(aes(group = State)) + 
+    facet_grid(Category~Status)
+```
+
+Looking just at the states with data for 2010 and 2016, almost every single state has improved the state of their toilets. 
+
+```{r}
+improvements <- d %>% 
+    filter(Year != 2014, !is.na(`% Usable Toilets`)) %>% 
+    group_by(State, Category) %>% 
+    filter(n() > 1) %>% 
+    arrange(Year) %>% 
+    summarise(Improvement = `% Usable Toilets`[2] - `% Usable Toilets`[1], 
+        Y2010 = `% Usable Toilets`[1], Y2016 = `% Usable Toilets`[2])  
+
+ggplot(improvements, aes(x = reorder(State, Improvement, mean), y = Improvement)) + 
+    geom_point(aes(color = Improvement > 0)) + 
+    facet_wrap(~Category, ncol = 1) 
+
+ggplot(improvements, aes(x = Y2010, y = Improvement)) + 
+    geom_point(aes(color = Improvement > 0)) + 
+    facet_wrap(~Category, ncol = 1) + stat_smooth(method = "lm")
+
+ggplot(improvements, aes(x = Y2016, y = Improvement)) + 
+    geom_point(aes(color = Improvement > 0)) + 
+    facet_wrap(~Category, ncol = 1) + stat_smooth(method = "lm") 
+```
+
+All states except for 2 made improvements in sanitation. One of the two states saw regression in both all toilets and toilets for women. The other state only saw regression in overall toilets, but saw improvement in toilets for women. 
+
+There was a negative or flat correlation between the percent of usable toilets in 2010 and the improvement seen between 2010 and 2016. There was a positive correlation between the percent of usable toilets in 2016 and the improvement seen between 2010 and 2016. The latter observation makes sense given that the value in 2016 depends in part on the improvement over that period. 
+
+```{r}
+
+to_plot <- improvements %>% 
+    mutate(Type = ifelse(str_detect(Category, "Girls"), "Women", "All")) %>% 
+    mutate(Improvement = Improvement * 100)
+
+ggplot(to_plot, aes(x = reorder(State, Improvement, mean), 
+        y = Improvement,
+        shape = Type)) + 
+    geom_point(size = 5, aes(color = Improvement > 0)) + 
+    geom_hline(yintercept = 0) + 
+    scale_shape_manual(values = c("•", "♀")) + 
+    scale_color_manual(values = c("#e41a1c", "black"), guide = FALSE) +
+    theme(axis.text.x = element_blank(), axis.ticks.x = element_blank()) + 
+    ylab("% change in usable toilet\nfacilities (2010-2016)") + xlab("State") + 
+    ggrepel::geom_label_repel(
+        data = filter(to_plot, Improvement < 0 | Improvement > 40, 
+            Type == "All"), aes(label = State), 
+        box.padding = unit(0.2, "lines")) + 
+    ggtitle("Large sanitation improvements in India") + 
+    labs(subtitle = 
+            paste0("The availability of functioning toilets increased in almost ",
+                "every Indian\nstate between 2010 and 2016. Improvements were ", 
+                "even greater\nfor women's toilets than for all toilets."))
+
+ggsave("out/2017-week-32.png", width = 5.25, height = 3.5, units = "in", dpi = 303)
+```
