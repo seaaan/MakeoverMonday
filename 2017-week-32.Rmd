@@ -1,5 +1,5 @@
 ---
-title: '2017 week 32: Toilets in India'
+title: '2017 week 32: Toilets in Indian schools'
 output: github_document
 ---
 
@@ -10,7 +10,7 @@ library(stringr)
 library(dplyr)
 ```
 
-It's week 31 of [Makeover Monday](http://www.makeovermonday.co.uk/data/) 2017. The data is about access to sanitation in India and comes from the [Annual Status of Education Report](http://www.asercentre.org/p/289.html). 
+It's week 31 of [Makeover Monday](http://www.makeovermonday.co.uk/data/) 2017. The data is about access to sanitation in Indian schools and comes from the [Annual Status of Education Report](http://www.asercentre.org/p/289.html). 
 
 ```{r}
 d <- readxl::read_excel("data/2017-week-32.xlsx", guess_max = 1E5)
@@ -27,7 +27,7 @@ d %>%
     geom_point() + geom_line(aes(group = State)) + geom_boxplot(aes(group = Year))
 ```
 
-In general there has been improvement in the percent of toilets that are working since 2010. In addition, the difference between all usable toilets and usable toilets for women has generally declined since then, meaning that the states are approaching parity between usable toilets for men and women. 
+In general there has been improvement in the percent of toilets that are working since 2010. In addition, the difference between all usable toilets and usable toilets for girls has generally declined since then, meaning that the states are approaching parity between usable toilets for boys and girls. 
 
 ```{r}
 d %>% 
@@ -39,7 +39,7 @@ d %>%
     facet_grid(Category~Status)
 ```
 
-Looking just at the states with data for 2010 and 2016, almost every single state has improved the state of their toilets. 
+Looking just at the states with data for 2010 and 2016, almost every single state has improved the state of their toilets in schools. 
 
 ```{r}
 improvements <- d %>% 
@@ -63,14 +63,13 @@ ggplot(improvements, aes(x = Y2016, y = Improvement)) +
     facet_wrap(~Category, ncol = 1) + stat_smooth(method = "lm") 
 ```
 
-All states except for 2 made improvements in sanitation. One of the two states saw regression in both all toilets and toilets for women. The other state only saw regression in overall toilets, but saw improvement in toilets for women. 
+All states except for 2 made improvements in sanitation. One of the two states saw regression in both all toilets and toilets for girls. The other state only saw regression in overall toilets, but saw improvement in toilets for girls. 
 
 There was a negative or flat correlation between the percent of usable toilets in 2010 and the improvement seen between 2010 and 2016. There was a positive correlation between the percent of usable toilets in 2016 and the improvement seen between 2010 and 2016. The latter observation makes sense given that the value in 2016 depends in part on the improvement over that period. 
 
 ```{r}
-
 to_plot <- improvements %>% 
-    mutate(Type = ifelse(str_detect(Category, "Girls"), "Women", "All")) %>% 
+    mutate(Type = ifelse(str_detect(Category, "Girls"), "Girls", "All")) %>% 
     mutate(Improvement = Improvement * 100)
 
 ggplot(to_plot, aes(x = reorder(State, Improvement, mean), 
@@ -86,11 +85,11 @@ ggplot(to_plot, aes(x = reorder(State, Improvement, mean),
         data = filter(to_plot, Improvement < 0 | Improvement > 40, 
             Type == "All"), aes(label = State), 
         box.padding = unit(0.2, "lines")) + 
-    ggtitle("Large sanitation improvements in India") + 
+    ggtitle("Large sanitation improvements in Indian schools") + 
     labs(subtitle = 
-            paste0("The availability of functioning toilets increased in almost ",
-                "every Indian\nstate between 2010 and 2016. Improvements were ", 
-                "even greater\nfor women's toilets than for all toilets."))
+            paste0("The availability of functioning toilets increased in schools in ",
+                "almost\nevery Indian state between 2010 and 2016. Improvements were\n", 
+                "even greater for girl's toilets than for all toilets."))
 
 ggsave("out/2017-week-32.png", width = 5.25, height = 3.5, units = "in", dpi = 303)
 ```
