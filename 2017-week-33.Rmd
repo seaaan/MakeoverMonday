@@ -1,0 +1,269 @@
+---
+title: '2017 week 33: Births in the US'
+output: github_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+library(ggplot2)
+library(stringr)
+library(dplyr)
+```
+
+It's week 33 of [Makeover Monday](http://www.makeovermonday.co.uk/data/) 2017. The data is about the [timing of births in America](https://pudding.cool/2017/05/births/index.html) and comes from the [CDC](https://www.cdc.gov/nchs/data_access/vitalstatsonline.htm). 
+
+There are so many interesting variables in this data set! You can look at geographic and temporal variation of
+
+* mother's age
+* child's gender
+* child's birth weight
+* number of births
+
+```{r}
+# there is a weird byte at the beginning of the file which messes up the column names
+d <- read.table("data/2017-week-33.csv", sep = "\t", skipNul = TRUE, skip = 1)
+
+colnames(d) <- readLines("data/2017-week-33.csv", n = 1, skipNul = TRUE) %>% 
+    str_sub(3, -1) %>% 
+    str_split("\t") %>% 
+    .[[1]] %>% 
+    str_replace_all(" ", "")
+
+d <- d %>% 
+    as_tibble() %>% 
+    mutate(Date = lubridate::dmy(Date))
+
+state_abbrevs <- read.csv("data/2017-week-33-states.csv")
+
+d <- inner_join(d, state_abbrevs)
+```
+
+
+```{r}
+ggplot(d, aes(x = Births, color = factor(MonthCode))) + 
+    geom_freqpoly(alpha = 0.5) + 
+    scale_x_log10()
+
+ggplot(d, aes(x = Births, color = factor(Year))) + 
+    geom_freqpoly() + scale_x_log10()
+
+ggplot(d, aes(y = Births, x = factor(MonthCode))) + 
+    geom_boxplot()
+```
+
+What's up with the weird discontinuity where births are either above or below 4000? 
+
+```{r}
+filter(d, Births > 4000) 
+```
+
+It turns out to be the data for Los Angeles County, which is apparently unique across the nation for having dramatically more births than any other county. 
+
+```{r}
+ggplot(d, aes(y = Births, x = factor(MonthCode))) + 
+    geom_boxplot() + scale_y_log10()
+```
+
+## Mother's age
+```{r}
+ggplot(d, aes(y = AverageAgeofMother, x = Year, group = Year)) + 
+    geom_boxplot() 
+
+ggplot(d, aes(y = AverageAgeofMother, x = Year)) + 
+    stat_smooth(method = lm) + 
+    facet_wrap(~ reorder(State, AverageAgeofMother, mean)) + 
+    ggtitle("by mean age of mother")
+
+x <- d %>%
+    group_by(State) %>%
+    group_by(State, Year) %>%
+    summarize(MotherAge = weighted.mean(AverageAgeofMother, Births)) %>% 
+    ungroup()
+
+filter(x, Year == min(Year) | Year == max(Year)) %>% 
+    ggplot(aes(x = Year, y = MotherAge, group = State)) + geom_line() + 
+        geom_text(data = filter(x, Year == 2015), aes(label = State), hjust = 0) + 
+        xlim(c(2002, 2018))
+
+ggplot(x, aes(y = MotherAge, x = Year)) + 
+    geom_line(aes(group = State), color = "grey50") + 
+    geom_text(data = filter(x, Year == 2015), aes(label = State), hjust = 0) + 
+    xlim(c(2002, 2018))
+
+
+filter(x, Year == min(Year) | Year == max(Year)) %>% 
+    ggplot(aes(y = reorder(State, MotherAge, min), x = MotherAge)) + 
+        geom_line(aes(group = State), color = "grey50") + 
+        geom_point(aes(fill = factor(Year)), pch = 21) + 
+        labs(y = NULL, x = "Average mother's age at delivery", color = NULL) + 
+        ggtitle("Women are giving birth later") + 
+        scale_fill_manual(values = c("white", "black")) + 
+        theme(legend.position = c(0.875, 0.05)) + 
+        theme(legend.title = element_blank(),
+            legend.margin = margin(0, 5, 5, 5))
+
+ggsave("out/2017-week-33-a.png", height = 7, width = 4, units = "in", dpi = 303)
+
+ggplot(d, aes(y = AverageAgeofMother, x = Year)) + 
+    stat_smooth(method = lm, aes(group = State)) +
+    scale_color_discrete(guide = FALSE) + 
+    ggtitle("linear model of trend")
+
+county_ages <- d %>%
+    group_by(County) %>% 
+    filter(Year == min(Year)) %>% 
+    summarize(MotherStartAge = mean(AverageAgeofMother))
+
+county_models <- d %>% 
+    group_by(County) %>% 
+    do(broom::tidy(lm(AverageAgeofMother ~ Year, data = .)))
+
+counties <- inner_join(county_ages, county_models)
+
+filter(counties, term == "Year") %>% 
+    ggplot(aes(x = MotherStartAge, y = estimate)) + 
+    geom_point() + 
+    geom_hline(yintercept = 0) +
+    ylab("Increase in mother's age per year") + 
+    xlab("Average mother's age in 2003") + 
+    ggtitle("County level linear models of mother's age vs year")
+
+State_ages <- d %>%
+    group_by(State) %>% 
+    filter(Year == min(Year)) %>% 
+    summarize(MotherStartAge = weighted.mean(AverageAgeofMother, Births))
+
+State_models <- d %>% 
+    group_by(State, Abbreviation) %>% 
+    do(broom::tidy(lm(AverageAgeofMother ~ Year, data = .)))
+
+states <- inner_join(State_ages, State_models)
+
+filter(states, term == "Year") %>% 
+    ggplot(aes(x = MotherStartAge, y = estimate)) + 
+    ggrepel::geom_text_repel(aes(label = Abbreviation), 
+        size = 2, min.segment.length = unit(0.1, "lines")) + 
+    geom_point(color = "grey50") + 
+    geom_hline(yintercept = 0) +
+    ylab("Increase in mother's age per year\n(2003-2015)") + 
+    xlab("Average mother's age in 2003") + 
+    ggtitle("Women are giving birth later") + 
+    labs(subtitle = 
+        paste0("Since 2003, the average age at delivery has gone up in every state, ", 
+            "with\nfaster rises in states where mothers were younger in 2003 ", 
+            "(typically the\nsouth and southwest) and slower rises in states ", 
+            "where mothers were\nalready giving birth at almost 30 in 2003."))
+
+ggsave("out/2017-week-33-b.png", width = 5.25, height = 4, units = "in", dpi = 303)
+```
+
+## Birth weight
+```{r}
+ggplot(d, aes(y = AverageBirthWeight, x = AverageAgeofMother)) + 
+    geom_hex() + 
+    stat_smooth(method = lm) 
+
+ggplot(d, aes(y = AverageBirthWeight, x = AverageAgeofMother)) + 
+    geom_hex() + 
+    stat_smooth(method = lm) + 
+    facet_wrap(~ Year)
+
+state_weight <- d %>%
+    group_by(State, Year, Gender, Abbreviation) %>% 
+    summarize(Weight = weighted.mean(AverageBirthWeight, Births),
+        AverageAgeofMother = weighted.mean(AverageAgeofMother, Births),
+        Births = sum(Births))
+
+ggplot(state_weight, aes(x = Year, y = Weight)) + 
+    geom_point() + geom_line(aes(group = State)) + 
+    facet_wrap(~Gender) + 
+    ggtitle("On average, male babies are bigger")
+
+ggplot(d, aes(x = AverageBirthWeight, color = Gender, fill = Gender)) +
+    geom_freqpoly(bins = 50, aes(weight = Births), stat = "bin") + 
+    ggtitle("On average, male babies are bigger") 
+
+lm(AverageBirthWeight ~ AverageAgeofMother + State + Year + Gender, data = d) %>% summary()
+
+to_plot <- state_weight %>% 
+    filter(Year == 2015) %>% mutate(Weight = Weight / 1000)
+highlight <- to_plot %>% 
+    filter(Weight > 3.45 | Weight < 3.1 | (AverageAgeofMother > 30 & Weight > 3.35) | 
+        (AverageAgeofMother > 29 & Weight < 3.15) | (AverageAgeofMother < 27 & Weight > 3.32)
+        )
+ggplot(to_plot, aes(x = AverageAgeofMother, y = Weight)) + 
+    geom_line(aes(group = State), color = "grey75") + 
+    ggrepel::geom_text_repel(data = highlight, aes(label = Abbreviation), size = 3) + 
+    geom_point(aes(color = Gender)) + 
+    scale_color_manual(values = c("#ff748c", "#4b93c3"), guide = FALSE) + 
+    scale_y_continuous(sec.axis = sec_axis(~ . * 2.20462, 
+        name = "Average birth weight in 2015 (lb)")) + 
+    stat_smooth(method = lm, aes(group = Gender, color = Gender), se = FALSE) + 
+    ggtitle("Birth weight determined by gender, mother's age, and state") + 
+    labs(y = "Average birth weight in 2015 (kg)", x = "Mother's age at delivery", subtitle = 
+        paste("Average birth weights vary by almost a pound. The most important factors are:\n",
+            "  - Gender: boys (blue) weigh 110g (4oz) more than girls (pink)\n",
+            "  - Mother's age: each year older adds 12g (0.5oz) to birth weight\n", 
+            "  - State: each state (connected by lines) has its own base weight"))
+ggsave("out/2017-week-33-c.png", width = 5.5, height = 5, units = "in", dpi = 303)
+```
+
+## Birth seasonality
+```{r}
+ggplot(d, aes(y = Births, x = Date, group = County)) + 
+    geom_line() + scale_y_log10() + facet_wrap(~Gender, ncol = 1) + 
+    ggtitle("County")
+
+d %>% 
+    group_by(State, Date, Gender) %>% 
+    summarise(Births = sum(Births)) %>% 
+    ggplot(aes(y = Births, x = Date, group = State)) + 
+    geom_line() + scale_y_log10() + facet_wrap(~Gender, ncol = 1) + 
+    ggtitle("State")
+
+d %>% 
+    # sum across counties
+    group_by(State, MonthCode, Gender, Year) %>% 
+    summarise(Births = sum(Births)) %>% 
+    # average across years
+    group_by(State, MonthCode, Gender) %>% 
+    summarise(Births = mean(Births)) %>% 
+    ggplot(aes(y = Births, x = MonthCode, group = State)) + 
+    geom_line() + scale_y_log10() + facet_wrap(~Gender, ncol = 1) + 
+    ggtitle("State by month")
+
+
+d %>% 
+    group_by(State, Date, Gender) %>% 
+    summarise(Births = sum(Births)) %>% 
+    filter(State == "Washington") %>% 
+    ggplot(aes(y = Births, x = Date, group = State, color = Gender)) + 
+    geom_line() + 
+    ggtitle("Washington")
+
+d %>% 
+    filter(State == "Washington") %>% 
+    # sum across counties
+    group_by(State, MonthCode, Gender, Year) %>% 
+    summarise(Births = sum(Births)) %>% 
+    # average across years
+    group_by(State, MonthCode, Gender) %>% 
+    summarise(Births = mean(Births)) %>% 
+    ggplot(aes(y = Births, x = MonthCode, group = State)) + 
+    geom_line() + facet_wrap(~Gender, ncol = 1) + 
+    ggtitle("Washington by month")
+```
+
+## Gender
+```{r}
+d %>% 
+    select(Date, County, Gender, Month, State, Year, Abbreviation, Births) %>% 
+    tidyr::spread(Gender, Births) %>% 
+    mutate(BoysPerGirl = Male / Female) %>% 
+    ggplot(aes(x = Male + Female, y = BoysPerGirl)) + 
+        geom_point(alpha = 0.1) + 
+        geom_hline(yintercept = 1) + 
+        scale_x_log10() + 
+        stat_smooth()
+
+```
