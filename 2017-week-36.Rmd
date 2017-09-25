@@ -1,0 +1,179 @@
+---
+title: '2017 week 36: My World Survey'
+output: github_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+library(tidyverse)
+library(stringr)
+```
+
+It's week 36 of [Makeover Monday](http://www.makeovermonday.co.uk/data/) 2017 edition. This week is a special challenge with the [My World Survey](http://data.myworld2030.org/).
+
+```{r}
+d <- readxl::read_excel("data/2017-week-36.xlsx", sheet = "votes", 
+    guess_max = 10000)
+
+demographics <- select(d, gender, age, education_level, country, disability) %>% 
+    mutate(education_level = recode_factor(education_level, 
+        "1" = "Some primary", "2" = "Finished primary", 
+        "3" = "Finished secondary", "4" = "Beyond secondary", 
+        .ordered = TRUE)) 
+```
+
+# Demographics
+
+Goal 1: Understand demographics of survey respondents, in reference to [this figure from My World 2015](http://data.myworld2015.org/).
+
+```{r}
+bar_plot <- function(group) {
+    g <- enquo(group)
+    to_plot <- demographics %>% 
+        group_by(!!g) %>% 
+        count()
+    
+    ggplot(to_plot, aes_string(x = as.character(substitute(group)), y = "n")) + geom_col()
+}
+
+bar_plot(gender)
+bar_plot(age)
+bar_plot(education_level)
+bar_plot(country)
+bar_plot(disability)
+
+```
+
+
+## Gender
+
+The world is 49.55% female in 2015 (https://data.worldbank.org/indicator/SP.POP.TOTL.FE.ZS). 
+```{r}
+to_plot <- demographics %>% 
+    filter(!is.na(gender)) %>% 
+    group_by(gender) %>% 
+    summarise(SurveyPopulation = n()) %>% 
+    ungroup() %>% 
+    mutate(Survey = SurveyPopulation / sum(SurveyPopulation)) %>% 
+    mutate(World = c(0.4955, 0.5045, 0)) %>% 
+    gather(Group, Fraction, -gender, -SurveyPopulation)
+
+ggplot(to_plot, aes(x = gender, y = Fraction, fill = Group)) +
+    geom_col(position = "dodge")
+```
+
+Males are somewhat underrepresented. 
+
+
+## Education
+
+Wittgenstein educational attainment projections for 2015 (http://databank.worldbank.org/data/reports.aspx?source=education-statistics-~-all-indicators) : 
+
+* "Some primary" = 10%
+* "Finished primary" = 20% + 20% for some secondary
+* "Finished secondary" = 30%
+* "Beyond secondary" = 10%
+
+(doesn't sum to 100)
+
+
+```{r}
+to_plot <- demographics %>% 
+    filter(!is.na(education_level)) %>% 
+    group_by(education_level) %>% 
+    count() %>% 
+    ungroup() %>% 
+    mutate(Survey = n / sum(n)) %>% 
+    mutate(World = c(0.1, 0.4, 0.3, 0.1)) %>% 
+    gather(Group, Fraction, -education_level, -n)
+
+ggplot(to_plot, aes(x = education_level, y = Fraction, fill = Group)) +
+    geom_col(position = "dodge")
+
+```
+
+World age distribution 2017 (https://www.census.gov/population/international/data/idb/worldpop.php)
+saved to file
+
+## Age 
+
+```{r}
+ages <- demographics %>% 
+    group_by(age) %>% 
+    summarise(Age = age[1], SurveyPopulation = as.numeric(n()))
+
+world_ages <- read_csv("data/2017-week-36-world-age-distribution.csv") %>% 
+    mutate(Age = as.integer(str_extract(Age, "\\d*")), 
+        Population = as.numeric(Population))
+
+# right join to ensure all ages are included (some are 0 in survey, but all 
+# are present in world)
+ages <- right_join(ages, world_ages) %>% 
+    mutate(SurveyPopulation = ifelse(is.na(SurveyPopulation), 0, SurveyPopulation))
+
+to_plot <- ages %>% 
+    ungroup() %>% 
+    transmute(Age = Age, Survey = SurveyPopulation / sum(SurveyPopulation), 
+        World = Population / sum(Population)) %>% 
+    gather(Group, Fraction, -Age) 
+    
+ggplot(to_plot, aes(x = Age, y = Fraction, color = Group, fill = Group)) + 
+    geom_area(position = "identity", alpha = 0.5) 
+```
+
+The survey population is very different by age than the world population by age!
+
+## Disability
+In 2011 the [WHO estimated](http://www.who.int/disabilities/world_report/2011/report/en/) that "About 15% of the world's population lives with some form of disability, of whom 2-4% experience significant difficulties in functioning", up from 10% in 1970. 
+
+```{r}
+to_plot <- demographics %>% 
+    filter(!is.na(disability)) %>% 
+    group_by(disability) %>% 
+    count() %>% 
+    ungroup() %>% 
+    mutate(Survey = n / sum(n)) %>% 
+    mutate(World = c(0.85, 0.15)) %>% 
+    gather(Group, Fraction, -disability, -n)
+
+ggplot(to_plot, aes(x = disability, y = Fraction, fill = Group)) +
+    geom_col(position = "dodge")
+```
+
+## Country
+
+```{r}
+
+to_plot <- demographics %>% 
+    filter(!is.na(country)) %>% 
+    mutate(country = str_to_lower(country), 
+        country = ifelse(country == "palestine (state of)", 
+            "state of palestine", country)) %>% 
+    group_by(country) %>% 
+    count() %>% 
+    ungroup() %>% 
+    mutate(Survey = n / sum(n))
+
+country_ref <- readxl::read_excel("data/2017-week-36.xlsx", sheet = "Country", 
+        na = "#N/A") %>% 
+    mutate(country = str_to_lower(country_name)) 
+
+countries <- left_join(to_plot, country_ref) %>% 
+    mutate(continent_name = ifelse(country == "kosovo", 
+        "Europe", continent_name))
+
+ggplot(countries, aes(x = continent_name, y = Survey, group = country_name)) +
+    geom_col(color = "black", fill = "grey50")
+
+world_popn <- readxl::read_excel("data/2017-week-36-world-population-by-country.xlsx") %>% 
+    transmute(country = str_to_lower(Country), world = Population) %>% 
+    mutate(world = world / sum(world))
+
+x <- left_join(countries, world_popn) %>% 
+    gather(Group, Fraction, Survey, world)
+
+ggplot(x, aes(x = continent_name, y = Fraction, fill = Group)) +
+    geom_col(color = "black", position = "dodge")
+```
+
+survey data is 70% from Mexico!
