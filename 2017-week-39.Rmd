@@ -1,0 +1,141 @@
+---
+title: '2017 week 39: Food Fashions'
+output: github_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+library(tidyverse)
+library(stringr)
+```
+
+It's week 39 of [Makeover Monday](http://www.makeovermonday.co.uk/data/) 2017. This week focuses on food trends, with data from [nielsen](http://www.nielsen.com/content/dam/nielsenglobal/eu/docs/pdf/Global%20Ingredient%20and%20Out-of-Home%20Dining%20Trends%20Report%20FINAL%20(1).pdf).
+
+```{r}
+d <- readxl::read_excel("data/2017-week-39.xlsx")
+```
+
+
+```{r}
+ggplot(d, aes(x = Region, y = Followers)) + 
+    geom_col() + facet_wrap(~ reorder(Diet, Followers, sum)) + 
+    gghlab::tilt_x_labels(90)
+```
+
+The most popular dietary fashions are for nutrient restriction: low carb/salt/sugar/fat. Europe in general seems to be lower than the others in most cases. The most dramatic difference across countries is in the Halal category. 
+
+```{r}
+ggplot(d, aes(x = reorder(Diet, Followers, sum), y = Followers, color = Region)) + 
+    geom_point() + geom_line(aes(group = Region)) + 
+    gghlab::tilt_x_labels(90)
+```
+
+This shows more clearly that Europe tends to be lowest in most categories, with North America typically following next. Asia-Pacific and Latin America are on the higher ends of things. 
+
+```{r}
+d <- d %>% 
+    mutate(Group = case_when(
+        str_detect(Diet, "Free|Low|Conscious") ~ "Nutrient-focused", 
+        Diet %in% c("Kosher", "Halal") ~ "Religious",
+        TRUE ~ "Low animal"
+    ))
+
+ggplot(d, aes(x = reorder(Diet, Followers, sum), y = Followers, 
+        color = reorder(Region, -Followers))) + 
+    geom_point() + geom_line(aes(group = Region)) + 
+    gghlab::tilt_x_labels(90) + 
+    facet_wrap(~ Group, scales = "free_x")
+```
+
+Dividing it into groups like this gives a little more context. 
+
+```{r}
+d %>% 
+    group_by(Group,  Diet) %>% 
+    mutate(Normalized = Followers - median(Followers)) %>% 
+    ggplot(aes(x = reorder(Diet, Followers, sum), y = Normalized, 
+        color = reorder(Region, -Followers))) + 
+    geom_point() + geom_line(aes(group = Region)) + 
+    gghlab::tilt_x_labels(90) + 
+    facet_wrap(~ Group, scales = "free_x")
+```
+
+This shows it normalized, with the value for each regions/diet subtracted by the median value (across regions), so positive numbers mean more prominent than the median and negative mean less prominent. 
+
+```{r}
+# principal components
+# used log10(Followers) bc not very normally distributed
+# hist(d$Followers) vs hist(log10(d$Followers))
+pca <- d %>% 
+    select(-Group) %>% 
+    mutate(Followers = log10(Followers)) %>% 
+    spread(Diet, Followers) %>% 
+    .[,2:12] %>% prcomp() %>% 
+    .$x
+
+pca <- cbind(pca, spread(select(d, -Group), Diet, Followers)[1:5, "Region"])
+
+ggplot(pca, aes(x = PC1, PC2, color = Region)) + geom_point()
+```
+
+```{r, warn=FALSE}
+d %>% 
+    select(-Group) %>% 
+    spread(Region, Followers) %>% 
+    .[,2:6] %>% 
+    cor() 
+
+to_correlate <- d %>% 
+    select(-Group) %>% 
+    spread(Region, Followers) 
+
+GGally::ggpairs(to_correlate[,2:6]) + ggtitle("with Halal")
+GGally::ggpairs(to_correlate[to_correlate$Diet != "Halal",2:6]) + ggtitle("without Halal")
+```
+
+Weak correlation between Africa/Middle East with other regions is based on Halal diet outlier. If you remove that category, the correlations are very strong across all regions. 
+
+```{r}
+d %>% 
+    group_by(Region) %>% 
+    mutate(DietRank = 12 - rank(Followers, ties.method = "random")) %>% 
+    select(Region, Diet, DietRank) %>% 
+    ggplot(aes(x = reorder(Diet, DietRank, median), y = DietRank, 
+        color = Region, group = Region)) + 
+    geom_point() + gghlab::tilt_x_labels() + geom_line()
+
+```
+
+
+Final version: 
+```{r}
+to_plot <- d %>% 
+    mutate(Diet = case_when(
+        str_detect(Diet, "Wheat") ~ "Low gluten", 
+        str_detect(Diet, "Lactose") ~ "Low dairy",
+        str_detect(Diet, "Sugar") ~ "Low sugar",
+        str_detect(Diet, "Carb") ~ "Low carb",
+        str_detect(Diet, "Fat") ~ "Low fat",
+        str_detect(Diet, "Sodium") ~ "Low salt",
+        TRUE ~ Diet
+    )) %>% 
+    mutate(Region = ifelse(Region == "Africa/Middle East", 
+        "Africa/Mid-East", Region))
+
+ggplot(to_plot, aes(x = reorder(Diet, Followers, sum), 
+        y = Followers * 100, color = Region)) + 
+    geom_line(aes(group = Region)) + geom_point() + 
+    gghlab::tilt_x_labels() + 
+    facet_grid(.~Group, scales = "free_x", space = "free_x") + 
+    ylab("% of people in region following diet") + 
+    xlab(NULL) + 
+    scale_color_brewer(palette = "Set1") + 
+    labs(color = NULL, title = "Diets are similar around the world", 
+        subtitle = paste(
+            "Diets popular in one region tend to be popular in others.", 
+            "The biggest regional difference,\nother than halal cuisine, is that", 
+            "Europeans report the least restrictive eating patterns."))
+
+ggsave("out/2017-week-39.png", width = 6, height = 4, units = "in", dpi = 303)
+
+```
