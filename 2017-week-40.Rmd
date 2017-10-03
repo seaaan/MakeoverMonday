@@ -1,0 +1,39 @@
+---
+title: '2017 week 40: Brexit'
+output: github_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+library(tidyverse)
+library(stringr)
+```
+
+It's week 40 of [Makeover Monday](http://www.makeovermonday.co.uk/data/) 2017. This week focuses on Brexit, with data from the [OECD](https://data.oecd.org/gdp/quarterly-gdp.htm).
+
+```{r}
+d <- readxl::read_excel("data/2017-week-40.xlsx")
+```
+
+
+```{r}
+d <- d %>% 
+    mutate(YQ = Year + as.numeric(str_sub(Quarter, 2, 2)) / 4) %>% 
+    filter(Country %in% c("DEU", "FRA", "GBR", "ITA"))
+
+ggplot(d, aes(x = YQ, y = `Percentage change from previous period`)) + 
+        geom_line(aes(group = Country, color = Country)) + 
+    ylab("Percentage change in GDP") + xlab(NULL) + 
+    geom_vline(xintercept = 2016.48) + 
+    labs(
+        title = "Did Brexit tank the UK's economy?", 
+        subtitle = paste0("The Brexit vote happened at the black vertical line.", 
+            "The four time series\nshow the change in GDP of France, Germany, ", 
+            "Italy, and the UK. Can\nyou tell, based on Brexit, which one is ", 
+            "the UK?"), 
+        caption = "Answer: green") + 
+    scale_color_brewer(type = "qual", palette = "Set1", guide = FALSE)
+
+ggsave("out/2017-week-40.png", width = 5, height = 3, units = "in", dpi = 303)
+
+```
